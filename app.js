@@ -90,7 +90,18 @@ function camelProfile(row) {
 async function audit(accountId, type, description) {
   await pool.query("INSERT INTO activity_logs (account_id, action_type, action_description) VALUES (?, ?, ?)", [accountId, type, description || null]);
 }
-const loginLimiter = rateLimit({ windowMs: 15*60*1000, limit: 10, standardHeaders: "draft-8", legacyHeaders: false });
+
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    error: "Too many login attempts. Please wait 15 minutes before trying again."
+  },
+  skipSuccessfulRequests: true
+});
+
 const resetLimiter = rateLimit({ windowMs: 60*60*1000, limit: 5, standardHeaders: "draft-8", legacyHeaders: false });
 
 app.get("/api/health", async (_req,res,next)=>{ try { await pool.query("SELECT 1"); res.json({status:"ok"}); } catch(e){next(e);} });
