@@ -1,0 +1,58 @@
+HyQual Railway Superadmin Setup
+===============================
+
+IMPORTANT
+---------
+HyQual login verifies passwords with bcrypt. A plaintext password inserted
+directly into users.password_hash will NOT work and should not be stored in SQL
+files. Use the Railway bootstrap steps below; the app hashes the password
+before saving it.
+
+Recommended: create the account using the app
+---------------------------------------------
+1. In Railway, open the service that runs the HyQual API.
+2. In Variables, set:
+   BOOTSTRAP_ADMIN_EMAIL = a valid email address you control
+   BOOTSTRAP_ADMIN_PASSWORD = a new password of at least 6 characters
+3. Open that service's shell or run a one-off command in its deployed
+   environment, and execute:
+   npm run create:superadmin
+4. Confirm the command reports that the superadmin was created or updated.
+   This command also connects to MySQL, so a connection/configuration error
+   means the service cannot reach the database.
+5. Remove BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PASSWORD from Railway
+   Variables after the command succeeds.
+6. Sign in at the app using that email and the password you chose.
+
+Do not send or commit the password. Do not put it in VITE_* variables.
+
+Optional MySQL SQL template
+---------------------------
+Use only if you already have a valid bcrypt hash generated with bcryptjs.
+Replace both placeholders before executing. Never put the plaintext password
+in password_hash.
+
+INSERT INTO accounts (id, email, password_hash, profile, status)
+VALUES (
+  UUID(),
+  'YOUR_VALID_ADMIN_EMAIL',
+  'PASTE_A_VALID_BCRYPT_HASH_HERE',
+  JSON_OBJECT(
+    'firstName', 'Antonio',
+    'lastName', 'Cruz',
+    'role', 'super_admin',
+    'status', 'active'
+  ),
+  'Active',
+  FALSE
+);
+
+Connection check
+----------------
+The public website URL is not a MySQL connection URL. On Railway, set MYSQL_URL
+to a reference to the MySQL service's MYSQL_URL, or set MYSQLHOST, MYSQLPORT,
+MYSQLUSER, MYSQLPASSWORD, and MYSQLDATABASE. The hostname mysql.railway.internal
+is private to Railway and will not resolve from a normal local computer.
+
+The application health check is:
+https://hyqualbackend-v1-production.up.railway.app/api/health
