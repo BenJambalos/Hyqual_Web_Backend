@@ -17,21 +17,19 @@ npm ci --prefix backend
 ## Local development
 
 1. Copy `backend/.env.example` to `backend/.env` and fill in your MySQL
-   connection settings.
-2. Start the API in one terminal:
-
-   ```sh
-   npm start --prefix backend
-   ```
-
-3. Start the website in another terminal:
+   connection settings. For local development with Railway MySQL, use the
+   database's public URL as `MYSQL_PUBLIC_URL`; Railway's private
+   `*.railway.internal` hostname only resolves from within Railway. The app
+   prefers `MYSQL_PUBLIC_URL` locally and `MYSQL_URL` on Railway.
+2. Start the API and website together in one terminal:
 
    ```sh
    npm run dev --prefix frontend
    ```
 
-The Vite dev server proxies `/api` to `http://localhost:3000`. The backend
-creates the MySQL schema at startup.
+This command starts both servers and stops them together when you press
+Ctrl+C. The Vite dev server proxies `/api` to `http://localhost:3000`. The
+backend creates the MySQL schema at startup.
 
 Create the initial superadmin by setting `BOOTSTRAP_ADMIN_EMAIL` and
 `BOOTSTRAP_ADMIN_PASSWORD` in `backend/.env`, then running:
@@ -110,6 +108,8 @@ For a **new empty MySQL database**, run `schema.sql` first and then `seed_data.s
 the same database. The application creates missing schema tables at startup, but deliberately
 does not automatically import demo seed rows into a live database. Do not run the seed repeatedly
 unless you have cleared the existing demo rows first.
+The application also updates existing account tables at startup to support account archiving and
+restoring each account's previous status.
 
 Website features that require storage not present in the supplied schema (for example online
 presence tracking and queued email delivery) are left disabled rather than creating extra tables.

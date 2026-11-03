@@ -57,7 +57,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   username       VARCHAR(50) NOT NULL,
   password_hash  VARCHAR(255) NOT NULL,
   role           ENUM('admin', 'farm_owner', 'super_admin') NOT NULL DEFAULT 'farm_owner',   -- CORRECTION 7
-  status         ENUM('active', 'disabled', 'suspended', 'pending', 'rejected') NOT NULL DEFAULT 'pending', -- CORRECTION 7
+  status         ENUM('active', 'inactive', 'disabled', 'suspended', 'pending', 'rejected', 'archived') NOT NULL DEFAULT 'pending', -- CORRECTION 7
+  status_before_archive VARCHAR(32) DEFAULT NULL,
   created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY username (username)

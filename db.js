@@ -3,7 +3,9 @@ import { readFile } from "node:fs/promises";
 import process from "node:process";
 import mysql from "mysql2/promise";
 
-const connectionUri = process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL;
+const connectionUri = process.env.RAILWAY_SERVICE_ID
+  ? process.env.MYSQL_URL || process.env.MYSQL_PUBLIC_URL
+  : process.env.MYSQL_PUBLIC_URL || process.env.MYSQL_URL;
 const connectionConfig = connectionUri
   ? (() => {
       const url = new URL(connectionUri);
@@ -75,6 +77,24 @@ export async function initializeDatabase() {
   const executableSql = schema.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
   for (const statement of executableSql.split(";").map((part) => part.trim()).filter(Boolean)) {
     await connectionPool.query(statement);
+  }
+
+  const [statusColumns] = await connectionPool.query("SHOW COLUMNS FROM accounts LIKE 'status'");
+  if (!statusColumns[0]?.Type.includes("'archived'")) {
+    await connectionPool.query(
+      "ALTER TABLE accounts MODIFY status ENUM('active', 'inactive', 'disabled', 'suspended', 'pending', 'rejected', 'archived') NOT NULL DEFAULT 'pending'",
+    );
+  }
+
+  const [archiveColumns] = await connectionPool.query("SHOW COLUMNS FROM accounts LIKE 'status_before_archive'");
+  if (archiveColumns.length === 0) {
+    await connectionPool.query(
+      "ALTER TABLE accounts ADD COLUMN status_before_archive VARCHAR(32) DEFAULT NULL AFTER status",
+    );
+  } else if (!archiveColumns[0].Type.toLowerCase().startsWith("varchar")) {
+    await connectionPool.query(
+      "ALTER TABLE accounts MODIFY COLUMN status_before_archive VARCHAR(32) DEFAULT NULL",
+    );
   }
 }
 

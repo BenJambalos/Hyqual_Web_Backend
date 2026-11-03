@@ -43,11 +43,11 @@ app.use(cors({
 function httpError(status, message) { const e = new Error(message); e.status = status; return e; }
 function hash(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
 function roleName(role) { return ({ farm_owner: "Farm Owner", admin: "BFAR Admin", super_admin: "Superadmin" })[role] || role; }
-function statusName(status) { return ({ active: "Active", disabled: "Inactive", suspended: "Suspended", pending: "Pending", rejected: "Rejected" })[status] || status; }
+function statusName(status) { return ({ active: "Active", inactive: "Inactive", disabled: "Inactive", suspended: "Suspended", pending: "Pending", rejected: "Rejected", archived: "Archived" })[status] || status; }
 function makeUser(account, profile) {
   return { ...profile, id: String(account.account_id), uid: String(account.account_id),
     accountId: account.account_id, email: profile.email, username: account.username,
-    role: roleName(account.role), status: statusName(account.status), archived: false };
+    role: roleName(account.role), status: statusName(account.status), archived: account.status === "archived" };
 }
 function signSession(accountId, expiry) {
   const payload = `${accountId}.${expiry}`;
@@ -184,8 +184,20 @@ app.patch("/api/users/:id",requireAuth,async(req,res,next)=>{
   const id=Number(req.params.id);
   if(req.account.role!=="super_admin"&&id!==req.account.account_id) throw httpError(403,"You may only update your own profile.");
   if(req.account.role==="super_admin"){
-   const map={Active:"active",Pending:"pending",Inactive:"disabled",Suspended:"suspended",Rejected:"rejected",active:"active",pending:"pending",disabled:"disabled",suspended:"suspended",rejected:"rejected"};
-   if(req.body.status) await pool.query("UPDATE accounts SET status=? WHERE account_id=?",[map[req.body.status]||req.body.status,id]);
+   const map={Active:"active",Pending:"pending",Inactive:"inactive",Suspended:"suspended",Rejected:"rejected",active:"active",inactive:"inactive",disabled:"disabled",suspended:"suspended",rejected:"rejected"};
+   if(req.body.status === "archived" || req.body.archived === true) {
+    await pool.query(
+      "UPDATE accounts SET status_before_archive=IF(status='archived',status_before_archive,status), status='archived' WHERE account_id=?",
+      [id],
+    );
+   } else if(req.body.archived === false) {
+    await pool.query(
+      "UPDATE accounts SET status=COALESCE(status_before_archive,'active'), status_before_archive=NULL WHERE account_id=? AND status='archived'",
+      [id],
+    );
+   } else if(req.body.status) {
+    await pool.query("UPDATE accounts SET status=? WHERE account_id=?",[map[req.body.status]||req.body.status,id]);
+   }
    if(req.body.role){const roles={"Farm Owner":"farm_owner","BFAR Admin":"admin","Superadmin":"super_admin"};await pool.query("UPDATE accounts SET role=? WHERE account_id=?",[roles[req.body.role]||req.body.role,id]);}
   }
   const fields={firstName:"first_name",middleName:"middle_name",lastName:"last_name",phone:"phone",mobile:"phone"};
