@@ -183,6 +183,9 @@ app.patch("/api/users/:id",requireAuth,async(req,res,next)=>{
  try{
   const id=Number(req.params.id);
   if(req.account.role!=="super_admin"&&id!==req.account.account_id) throw httpError(403,"You may only update your own profile.");
+  if(req.body.email!==undefined && id===req.account.account_id) {
+   throw httpError(403,"You cannot change your own email address.");
+  }
   if(req.account.role==="super_admin"){
    const map={Active:"active",Pending:"pending",Inactive:"inactive",Suspended:"suspended",Rejected:"rejected",active:"active",inactive:"inactive",disabled:"disabled",suspended:"suspended",rejected:"rejected"};
    if(req.body.status === "archived" || req.body.archived === true) {
@@ -329,7 +332,20 @@ app.post("/api/device/readings",requireDevice,async(req,res,next)=>{
  }catch(e){next(e);}
 });
 app.get("/api/device/readings/:parameter",requireAuth,async(req,res,next)=>{
- try{const col=({temperature:"temperature",ph:"ph_level",do:"dissolved_oxygen",dissolved_oxygen:"dissolved_oxygen",salinity:"salinity",ec:"salinity"})[req.params.parameter];if(!col)throw httpError(400,"Unsupported reading parameter.");const limit=Math.max(1,Math.min(5000,Number(req.query.limit)||2000));const {rows}=await pool.query(`SELECT reading_id,device_id,pond_id,${col} AS value,recorded_at FROM water_quality_readings WHERE ${col} IS NOT NULL ORDER BY recorded_at DESC LIMIT ${limit}`);res.json(rows.reverse().map(r=>({id:r.reading_id,deviceId:r.device_id,pondId:r.pond_id,parameter:req.params.parameter,value:Number(r.value),createdAt:new Date(r.recorded_at).toISOString()})));}catch(e){next(e);}
+ try{
+  const col=({temperature:"temperature",ph:"ph_level",do:"dissolved_oxygen",dissolved_oxygen:"dissolved_oxygen",salinity:"salinity",ec:"salinity"})[req.params.parameter];
+  if(!col)throw httpError(400,"Unsupported reading parameter.");
+  const limit=Math.max(1,Math.min(5000,Number(req.query.limit)||2000));
+  const pondId=req.query.pondId==null?null:Number(req.query.pondId);
+  if(pondId!==null&&(!Number.isInteger(pondId)||pondId<1))throw httpError(400,"Invalid pond ID.");
+  const where=pondId===null?`${col} IS NOT NULL`:`${col} IS NOT NULL AND pond_id=?`;
+  const values=pondId===null?[]:[pondId];
+  const {rows}=await pool.query(
+   `SELECT reading_id,device_id,pond_id,${col} AS value,recorded_at FROM water_quality_readings WHERE ${where} ORDER BY recorded_at DESC LIMIT ${limit}`,
+   values,
+  );
+  res.json(rows.reverse().map(r=>({id:r.reading_id,deviceId:r.device_id,pondId:r.pond_id,parameter:req.params.parameter,value:Number(r.value),createdAt:new Date(r.recorded_at).toISOString()})));
+ }catch(e){next(e);}
 });
 app.use("/api",(req,res,next)=>next(httpError(404,"API route not found.")));
 app.use((err,_req,res,_next)=>{if(err.code==="ER_DUP_ENTRY")return res.status(409).json({error:"A record with that username, email, or key already exists."});console.error(err);res.status(err.status||500).json({error:err.status?err.message:"Internal server error."});});
