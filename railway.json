@@ -2,10 +2,10 @@
   "$schema": "https://railway.com/railway.schema.json",
   "build": {
     "builder": "RAILPACK",
-    "buildCommand": "npm ci --prefix frontend && npm run build --prefix frontend && npm ci --prefix backend"
+    "buildCommand": "npm ci"
   },
   "deploy": {
-    "startCommand": "npm start --prefix backend",
+    "startCommand": "npm start",
     "healthcheckPath": "/api/health",
     "restartPolicyType": "ON_FAILURE"
   }
