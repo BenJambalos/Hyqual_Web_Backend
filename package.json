@@ -8,7 +8,9 @@
   "scripts": {
     "start": "node index.js",
     "create:superadmin": "node create-superadmin.js",
-    "import:data": "node scripts/import-firestore-json.js"
+    "import:data": "node scripts/import-firestore-json.js",
+    "migrate:ml": "node scripts/run_sql.js migrations/004_ml_results.sql",
+    "rollback:ml": "node scripts/run_sql.js migrations/004_ml_results_rollback.sql"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

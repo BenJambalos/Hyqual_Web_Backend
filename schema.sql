@@ -14,8 +14,10 @@
 --      (status heartbeat, reading upload or config poll). The API derives
 --      ONLINE/OFFLINE from it at read time, so a powered-off ESP32 shows
 --      OFFLINE even though it could not send a goodbye message.
---   For an EXISTING database run migrations/002_device_status_and_reading_pond.sql
---   instead of this file.
+--   D. ML risk results, job runs, forecast indexes, and notification links
+--      are part of fresh installs; existing databases need migrations/004_ml_results.sql.
+--   For an EXISTING database run the applicable migration scripts instead of
+--   relying on this file to alter existing tables.
 --
 -- Summary of original project corrections (7 total):
 --   1. water_quality_forecasts: forecast is now tied to a POND, not just
@@ -198,6 +200,51 @@ CREATE TABLE IF NOT EXISTS water_quality_readings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------------
+-- risk_classification_results and ml_job_runs
+-- Outputs written by the external ML service.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS risk_classification_results (
+  result_id                BIGINT AUTO_INCREMENT PRIMARY KEY,
+  farm_id                  INT NOT NULL,
+  pond_id                  INT NOT NULL,
+  source_reading_id        BIGINT NOT NULL,
+  reading_recorded_at      TIMESTAMP NOT NULL,
+  risk_class               ENUM('Low', 'Moderate', 'High') NOT NULL,
+  prob_low                 DECIMAL(6,5) DEFAULT NULL,
+  prob_moderate            DECIMAL(6,5) DEFAULT NULL,
+  prob_high                DECIMAL(6,5) DEFAULT NULL,
+  water_quality_condition  ENUM('Normal', 'Abnormal') NOT NULL,
+  forecast_trend           ENUM('Stable', 'Improving', 'Deteriorating') DEFAULT NULL,
+  hybrid_status            ENUM('Normal', 'Warning', 'Critical') NOT NULL,
+  details_json             JSON DEFAULT NULL,
+  model_version            VARCHAR(40) NOT NULL,
+  calculated_at            TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_risk_source_reading (source_reading_id),
+  KEY idx_risk_pond_time (pond_id, reading_recorded_at),
+  KEY idx_risk_farm_time (farm_id, calculated_at),
+  CONSTRAINT fk_risk_results_farm FOREIGN KEY (farm_id)
+    REFERENCES aquaculture_farms (farm_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_risk_results_pond FOREIGN KEY (pond_id)
+    REFERENCES ponds (pond_id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_risk_results_reading FOREIGN KEY (source_reading_id)
+    REFERENCES water_quality_readings (reading_id) ON DELETE CASCADE ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS ml_job_runs (
+  run_id           BIGINT AUTO_INCREMENT PRIMARY KEY,
+  job_name         VARCHAR(30) NOT NULL,
+  trigger_source   VARCHAR(20) NOT NULL DEFAULT 'scheduler',
+  started_at       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  finished_at      TIMESTAMP NULL DEFAULT NULL,
+  status           ENUM('running', 'success', 'partial', 'failed', 'skipped') NOT NULL DEFAULT 'running',
+  ponds_seen       INT NOT NULL DEFAULT 0,
+  ponds_processed  INT NOT NULL DEFAULT 0,
+  rows_written     INT NOT NULL DEFAULT 0,
+  message          TEXT DEFAULT NULL,
+  KEY idx_ml_job_runs_name_time (job_name, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- ---------------------------------------------------------------------
 -- water_quality_forecasts
 -- CORRECTION 1: added pond_id (NOT NULL). A forecast is always for one
 -- specific pond's parameter — farm_id alone is ambiguous once a farm has
@@ -213,6 +260,8 @@ CREATE TABLE IF NOT EXISTS water_quality_forecasts (
   forecast_value   DECIMAL(6,2) NOT NULL,
   predicted_for    TIMESTAMP NOT NULL,
   created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_forecast_pond_param_target (pond_id, parameter, predicted_for),
+  KEY idx_forecast_pond_param_created (pond_id, parameter, created_at),
   KEY fk_water_quality_forecasts_farm (farm_id),
   KEY fk_water_quality_forecasts_pond (pond_id),
   CONSTRAINT fk_water_quality_forecasts_farm FOREIGN KEY (farm_id)
@@ -265,17 +314,22 @@ CREATE TABLE IF NOT EXISTS early_warning_notifications (
   estimated_arrival_time   TIMESTAMP NULL DEFAULT NULL,
   is_resolved              TINYINT(1) DEFAULT 0,
   is_read                  TINYINT(1) NOT NULL DEFAULT 0, -- CORRECTION 3
+  source                   VARCHAR(30) DEFAULT NULL,
+  risk_result_id           BIGINT DEFAULT NULL,
   created_at               TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   KEY fk_early_warnings_farm (farm_id),
   KEY fk_early_warnings_pond (pond_id),
   KEY fk_early_warnings_device (device_id),
   KEY idx_notifications_created (farm_id, created_at),
+  KEY idx_notifications_pond_source_open (pond_id, source, is_resolved),
   CONSTRAINT fk_early_warnings_farm FOREIGN KEY (farm_id)
     REFERENCES aquaculture_farms (farm_id) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT fk_early_warnings_pond FOREIGN KEY (pond_id)
     REFERENCES ponds (pond_id) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT fk_early_warnings_device FOREIGN KEY (device_id)
-    REFERENCES monitoring_devices (device_id) ON DELETE SET NULL ON UPDATE CASCADE
+    REFERENCES monitoring_devices (device_id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_early_warnings_risk_result FOREIGN KEY (risk_result_id)
+    REFERENCES risk_classification_results (result_id) ON DELETE SET NULL ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- ---------------------------------------------------------------------

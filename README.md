@@ -116,3 +116,22 @@ presence tracking and queued email delivery) are left disabled rather than creat
 The website's supported farms, ponds, devices, readings, alerts, account, and audit-log APIs map
 to the supplied schema. Fields not represented by that schema (such as farm map latitude/longitude)
 are not persisted by these APIs.
+
+## ML forecasts and risk results
+
+The ML service reads `water_quality_readings` and writes its outputs to
+`water_quality_forecasts` and `risk_classification_results`. The website reads
+those tables through the authenticated `GET /api/analytics/ml` endpoint; the
+backend remains connected to MySQL, so the browser must not connect directly
+to the database or call the ML service.
+
+For an existing database, run the additive migration once from the `backend/`
+directory, with the usual MySQL environment variables configured:
+
+```sh
+npm run migrate:ml
+```
+
+For a new database, `schema.sql` already includes the ML tables and columns.
+Historical weekly averages in reports are calculated from sensor readings;
+forecasts are shown separately as predicted future values.

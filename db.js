@@ -98,6 +98,23 @@ export async function initializeDatabase() {
   }
 }
 
+export async function runSqlFile(filePath) {
+  const sql = await readFile(filePath, "utf8");
+  const executableSql = sql.replace(/--[^\n]*/g, "").replace(/\/\*[\s\S]*?\*\//g, "");
+  const connection = await connectionPool.getConnection();
+  const results = [];
+
+  try {
+    for (const statement of executableSql.split(";").map((part) => part.trim()).filter(Boolean)) {
+      const [result] = await connection.query(statement);
+      if (Array.isArray(result) && result.length) results.push(result);
+    }
+    return results;
+  } finally {
+    connection.release();
+  }
+}
+
 export async function withTransaction(callback) {
   const connection = await connectionPool.getConnection();
   const client = createQueryClient(connection);

@@ -290,6 +290,58 @@ app.post("/api/audit-logs",requireAuth,async(req,res,next)=>{try{await audit(req
 app.post("/api/presence/heartbeat",requireAuth,(_req,res)=>res.status(204).end());
 app.get("/api/presence",requireAuth,requireSuperadmin,(_req,res)=>res.json([]));
 
+app.get("/api/analytics/ml",requireAuth,async(req,res,next)=>{
+ try{
+  const ownerFilter=req.account.role==="farm_owner"?" AND f.owner_id=?":"";
+  const values=req.account.role==="farm_owner"?[req.account.account_id]:[];
+  const [riskResults,forecasts,riskCount,forecastCount]=await Promise.all([
+   pool.query(`SELECT r.result_id,r.farm_id,r.pond_id,r.source_reading_id,r.reading_recorded_at,
+      r.risk_class,r.prob_low,r.prob_moderate,r.prob_high,r.water_quality_condition,
+      r.forecast_trend,r.hybrid_status,r.details_json,r.model_version,r.calculated_at,
+      f.farm_name,p.pond_name
+    FROM risk_classification_results r
+    JOIN aquaculture_farms f ON f.farm_id=r.farm_id
+    JOIN ponds p ON p.pond_id=r.pond_id
+    WHERE 1=1${ownerFilter}
+    ORDER BY r.calculated_at DESC,r.result_id DESC LIMIT 100`,values),
+   pool.query(`SELECT w.forecast_id,w.farm_id,w.pond_id,w.parameter,w.forecast_value,
+      w.predicted_for,w.created_at,f.farm_name,p.pond_name
+    FROM water_quality_forecasts w
+    JOIN aquaculture_farms f ON f.farm_id=w.farm_id
+    JOIN ponds p ON p.pond_id=w.pond_id
+    WHERE w.predicted_for>=CURRENT_TIMESTAMP${ownerFilter}
+    ORDER BY w.predicted_for ASC,w.forecast_id ASC LIMIT 500`,values),
+   pool.query(`SELECT COUNT(*) AS total
+    FROM risk_classification_results r
+    JOIN aquaculture_farms f ON f.farm_id=r.farm_id
+    WHERE 1=1${ownerFilter}`,values),
+   pool.query(`SELECT COUNT(*) AS total
+    FROM water_quality_forecasts w
+    JOIN aquaculture_farms f ON f.farm_id=w.farm_id
+    WHERE w.predicted_for>=CURRENT_TIMESTAMP${ownerFilter}`,values),
+  ]);
+  res.json({
+   counts:{
+    riskResults:Number(riskCount.rows[0].total),
+    upcomingForecasts:Number(forecastCount.rows[0].total),
+   },
+   riskResults:riskResults.rows.map(r=>({
+    id:String(r.result_id),farmId:String(r.farm_id),pondId:String(r.pond_id),
+    sourceReadingId:String(r.source_reading_id),readingRecordedAt:r.reading_recorded_at,
+    riskClass:r.risk_class,probLow:r.prob_low,probModerate:r.prob_moderate,probHigh:r.prob_high,
+    waterQualityCondition:r.water_quality_condition,forecastTrend:r.forecast_trend,
+    hybridStatus:r.hybrid_status,details:r.details_json,modelVersion:r.model_version,
+    calculatedAt:r.calculated_at,farmName:r.farm_name,pondName:r.pond_name,
+   })),
+   forecasts:forecasts.rows.map(r=>({
+    id:String(r.forecast_id),farmId:String(r.farm_id),pondId:String(r.pond_id),
+    parameter:r.parameter,value:r.forecast_value,predictedFor:r.predicted_for,
+    createdAt:r.created_at,farmName:r.farm_name,pondName:r.pond_name,
+   })),
+  });
+ }catch(e){next(e);}
+});
+
 app.post("/api/device/registrations",requireAuth,async(req,res,next)=>{
  try{
   const b=req.body;if(!b.farmId)throw httpError(400,"farmId is required.");
