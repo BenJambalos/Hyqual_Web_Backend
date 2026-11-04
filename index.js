@@ -5,12 +5,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import app from "./app.js";
-import { pool, initializeDatabase } from "./db.js";
+import { pool, initializeDatabase, runSqlFile } from "./db.js";
 
 const port = Number(process.env.PORT || 3000);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 await initializeDatabase();
+// Existing Railway databases are not changed by CREATE TABLE IF NOT EXISTS.
+// Apply the idempotent ML migration so existing databases gain the new ML
+// result table and forecast/notification columns required by the API.
+await runSqlFile(path.join(path.dirname(fileURLToPath(import.meta.url)), "migrations", "004_ml_results.sql"));
 
 const distPath = path.join(root, "frontend", "dist");
 if (existsSync(distPath)) {

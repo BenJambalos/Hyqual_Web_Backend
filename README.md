@@ -135,3 +135,10 @@ npm run migrate:ml
 For a new database, `schema.sql` already includes the ML tables and columns.
 Historical weekly averages in reports are calculated from sensor readings;
 forecasts are shown separately as predicted future values.
+
+
+## ML analytics and existing databases
+
+The backend serves authenticated `GET /api/analytics/ml` for the Admin Reports & Analytics page. At startup, the backend runs `migrations/004_ml_results.sql` after initializing the base schema so an existing MySQL database receives the ML tables/indexes/notification columns that `CREATE TABLE IF NOT EXISTS` alone would not add. Back up the Railway database before deployment. The migration is designed to be rerun; if deployment logs show a migration error, resolve that error before relying on the analytics page.
+
+Use `GET /api/health` to check that this backend build is deployed and can reach MySQL. Configure `CORS_ORIGIN` to the frontend's exact public origin if the frontend is deployed separately. Never commit `.env`; configure secrets in Railway variables and use `.env.example` as the template.

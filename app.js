@@ -290,11 +290,22 @@ app.post("/api/audit-logs",requireAuth,async(req,res,next)=>{try{await audit(req
 app.post("/api/presence/heartbeat",requireAuth,(_req,res)=>res.status(204).end());
 app.get("/api/presence",requireAuth,requireSuperadmin,(_req,res)=>res.json([]));
 
+// Lightweight route used to verify which backend build is deployed.
+app.get("/api/health", async (_req, res) => {
+ try {
+  await pool.query("SELECT 1 AS ok");
+  res.json({ ok: true, service: "hyqual-web-backend", mlAnalyticsRoute: true });
+ } catch (error) {
+  console.error("API health/database check failed:", error);
+  res.status(503).json({ ok: false, service: "hyqual-web-backend", database: "unavailable" });
+ }
+});
+
 app.get("/api/analytics/ml",requireAuth,async(req,res,next)=>{
  try{
   const ownerFilter=req.account.role==="farm_owner"?" AND f.owner_id=?":"";
   const values=req.account.role==="farm_owner"?[req.account.account_id]:[];
-  const [riskResults,forecasts,riskCount,forecastCount]=await Promise.all([
+  const [riskResults,forecasts,riskCount,forecastCount,forecastEvaluation,mlJobRuns]=await Promise.all([
    pool.query(`SELECT r.result_id,r.farm_id,r.pond_id,r.source_reading_id,r.reading_recorded_at,
       r.risk_class,r.prob_low,r.prob_moderate,r.prob_high,r.water_quality_condition,
       r.forecast_trend,r.hybrid_status,r.details_json,r.model_version,r.calculated_at,
@@ -319,6 +330,28 @@ app.get("/api/analytics/ml",requireAuth,async(req,res,next)=>{
     FROM water_quality_forecasts w
     JOIN aquaculture_farms f ON f.farm_id=w.farm_id
     WHERE w.predicted_for>=CURRENT_TIMESTAMP${ownerFilter}`,values),
+   // Historical forecasts can be evaluated only when an actual reading for
+   // the same pond/parameter exists close to the forecast target time.
+   pool.query(`SELECT w.parameter,w.forecast_value,w.predicted_for,w.pond_id,
+      CASE w.parameter
+       WHEN 'temperature' THEN r.temperature
+       WHEN 'ph' THEN r.ph_level
+       WHEN 'dissolved_oxygen' THEN r.dissolved_oxygen
+       WHEN 'salinity' THEN r.salinity END AS actual_value
+    FROM water_quality_forecasts w
+    JOIN aquaculture_farms f ON f.farm_id=w.farm_id
+    JOIN water_quality_readings r ON r.pond_id=w.pond_id
+      AND ABS(TIMESTAMPDIFF(SECOND,r.recorded_at,w.predicted_for))<=3600
+      AND ((w.parameter='temperature' AND r.temperature IS NOT NULL)
+        OR (w.parameter='ph' AND r.ph_level IS NOT NULL)
+        OR (w.parameter='dissolved_oxygen' AND r.dissolved_oxygen IS NOT NULL)
+        OR (w.parameter='salinity' AND r.salinity IS NOT NULL))
+    WHERE w.predicted_for<CURRENT_TIMESTAMP${ownerFilter}
+    ORDER BY ABS(TIMESTAMPDIFF(SECOND,r.recorded_at,w.predicted_for)) ASC
+    LIMIT 2000`,values),
+   pool.query(`SELECT run_id,job_name,trigger_source,started_at,finished_at,status,
+      ponds_seen,ponds_processed,rows_written,message
+    FROM ml_job_runs ORDER BY started_at DESC,run_id DESC LIMIT 20`),
   ]);
   res.json({
    counts:{
@@ -337,6 +370,16 @@ app.get("/api/analytics/ml",requireAuth,async(req,res,next)=>{
     id:String(r.forecast_id),farmId:String(r.farm_id),pondId:String(r.pond_id),
     parameter:r.parameter,value:r.forecast_value,predictedFor:r.predicted_for,
     createdAt:r.created_at,farmName:r.farm_name,pondName:r.pond_name,
+   })),
+   forecastEvaluationSamples:forecastEvaluation.rows.map(r=>({
+    parameter:({temperature:"temp",ph:"ph",dissolved_oxygen:"do",salinity:"sal"})[r.parameter],
+    forecast:Number(r.forecast_value),actual:Number(r.actual_value),predictedFor:r.predicted_for,
+   })),
+   mlJobRuns:mlJobRuns.rows.map(r=>({
+    id:String(r.run_id),jobName:r.job_name,triggerSource:r.trigger_source,
+    startedAt:r.started_at,finishedAt:r.finished_at,status:r.status,
+    pondsSeen:Number(r.ponds_seen),pondsProcessed:Number(r.ponds_processed),
+    rowsWritten:Number(r.rows_written),message:r.message,
    })),
   });
  }catch(e){next(e);}
